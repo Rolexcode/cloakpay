@@ -2,12 +2,12 @@
   "name": "privatepay",
   "version": "0.1.0",
   "private": true,
-"scripts": {
-  "dev": "next dev",
-  "build": "next build",
-  "start": "next start",
-  "lint": "next lint"
-},
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
   "dependencies": {
     "@umbra-privacy/sdk": "^4.0.0",
     "@umbra-privacy/web-zk-prover": "^2.0.1",

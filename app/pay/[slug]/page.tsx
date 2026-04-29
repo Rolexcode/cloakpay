@@ -3,6 +3,11 @@
 import { useEffect, useState } from "react";
 import { use } from "react";
 import { getPaymentLink, PaymentLink } from "@/lib/links";
+import { getClientFromWallet } from "@/lib/wallet";
+import {
+  getUserRegistrationFunction,
+  getPublicBalanceToEncryptedBalanceDirectDepositorFunction,
+} from "@umbra-privacy/sdk";
 
 // Validate slug format before hitting Redis.
 // Slugs are always 6 lowercase alphanumeric characters — anything else is rejected immediately.
@@ -14,14 +19,15 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
   const { slug } = use(params);
   const [link, setLink] = useState<PaymentLink | null>(null);
   const [loading, setLoading] = useState(true);
+  const [walletAddress, setWalletAddress] = useState("");
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [error, setError] = useState("");
   const [txSig, setTxSig] = useState("");
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     async function load() {
-      // Reject malformed slugs without touching the database
       if (!isValidSlug(slug)) {
         setLoading(false);
         return;
@@ -37,15 +43,40 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
     if (!link) return;
     setPaying(true);
     setError("");
+
     try {
-      // Umbra SDK confidential transfer — wired on Day 3
-      await new Promise((r) => setTimeout(r, 2500));
-      setTxSig("5xGh...k9mZ");
+      // Step 1: Connect Phantom wallet and build Umbra client
+      setStatus("Connecting wallet...");
+      const { client, address } = await getClientFromWallet();
+      setWalletAddress(address);
+
+      // Step 2: Register sender with Umbra confidential protocol
+      setStatus("Setting up private account...");
+      const register = getUserRegistrationFunction({ client });
+      await register({ confidential: true, anonymous: false });
+
+// Step 3: Deposit SOL privately into recipient's encrypted balance
+setStatus("Processing private transfer...");
+const deposit = getPublicBalanceToEncryptedBalanceDirectDepositorFunction({ client });
+
+const SOL_MINT = "So11111111111111111111111111111111111111112";
+
+const result = await deposit(
+  link.recipientAddress.trim(),
+  SOL_MINT,
+  BigInt(Math.floor(link.amount * 1_000_000_000)),
+);
+
+      // Step 4: Extract transaction signature from result
+      setTxSig(Array.isArray(result) ? result[0] : String(result));
       setPaid(true);
-    } catch {
-      setError("Transaction failed. Please try again.");
+
+    } catch (err: any) {
+      console.error("Payment error:", err);
+      setError(err.message || "Transaction failed. Please try again.");
     } finally {
       setPaying(false);
+      setStatus("");
     }
   }
 
@@ -127,7 +158,7 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
     .amount-value { font-family: 'Syne', sans-serif; font-size: 28px; font-weight: 800; }
     .amount-token { font-size: 14px; color: rgba(240,238,255,0.5); margin-left: 6px; }
 
-    .privacy-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+    .privacy-rows { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
 
     .privacy-row {
       display: flex; align-items: center; justify-content: space-between;
@@ -142,6 +173,24 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
       font-size: 11px; font-weight: 600; letter-spacing: 0.5px; color: #00d2be;
       background: rgba(0,210,190,0.08); border: 1px solid rgba(0,210,190,0.2);
       padding: 3px 10px; border-radius: 20px;
+    }
+
+    .wallet-row {
+      display: flex; align-items: center; justify-content: space-between;
+      background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05);
+      border-radius: 10px; padding: 12px 16px; margin-bottom: 20px;
+    }
+
+    .wallet-label { font-size: 13px; color: rgba(240,238,255,0.45); }
+    .wallet-connected { font-size: 11px; font-weight: 600; color: #00d2be; font-family: monospace; }
+    .wallet-not-connected { font-size: 11px; color: rgba(240,238,255,0.25); }
+
+    .status-msg {
+      font-size: 12px; color: rgba(240,238,255,0.5);
+      text-align: center; margin-bottom: 12px;
+      padding: 10px; background: rgba(108,71,255,0.06);
+      border: 1px solid rgba(108,71,255,0.15); border-radius: 8px;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
 
     .btn-pay {
@@ -195,10 +244,7 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
       background: rgba(255,107,107,0.08); border: 1px solid rgba(255,107,107,0.2);
       display: flex; align-items: center; justify-content: center; margin: 0 auto 20px;
     }
-    .notfound h2 {
-      font-family: 'Syne', sans-serif; font-size: 20px;
-      font-weight: 700; margin-bottom: 8px; letter-spacing: -0.3px;
-    }
+    .notfound h2 { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; margin-bottom: 8px; letter-spacing: -0.3px; }
     .notfound p { font-size: 13px; color: rgba(240,238,255,0.35); line-height: 1.6; }
 
     .success-card { text-align: center; }
@@ -213,11 +259,7 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
 
     @keyframes popIn { from { transform: scale(0); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 
-    .success-title {
-      font-family: 'Syne', sans-serif; font-size: 26px;
-      font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px;
-    }
-
+    .success-title { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; margin-bottom: 8px; }
     .success-sub { font-size: 13px; color: rgba(240,238,255,0.4); line-height: 1.7; margin-bottom: 24px; }
 
     .tx-box {
@@ -227,7 +269,8 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
     }
 
     .tx-label { font-size: 11px; color: rgba(240,238,255,0.25); letter-spacing: 0.5px; text-transform: uppercase; }
-    .tx-value { font-size: 12px; font-family: monospace; color: rgba(240,238,255,0.5); }
+    .tx-value { font-size: 12px; font-family: monospace; color: rgba(240,238,255,0.5); cursor: pointer; }
+    .tx-value:hover { color: #6c47ff; }
 
     .proof-note {
       font-size: 11px; color: rgba(240,238,255,0.22); line-height: 1.6;
@@ -291,7 +334,13 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
             {txSig && (
               <div className="tx-box">
                 <div className="tx-label">Transaction</div>
-                <div className="tx-value">{txSig}</div>
+                <div
+                  className="tx-value"
+                  onClick={() => window.open(`https://explorer.solana.com/tx/${txSig}?cluster=devnet`, "_blank")}
+                  title="View on Solana Explorer"
+                >
+                  {txSig.length > 16 ? `${txSig.slice(0, 8)}...${txSig.slice(-6)}` : txSig}
+                </div>
               </div>
             )}
             <div className="proof-note">
@@ -345,16 +394,6 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
               </div>
             </div>
             <div className="privacy-row">
-              <div className="privacy-row-label">Your wallet</div>
-              <div className="encrypted-badge">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00d2be" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                </svg>
-                Encrypted
-              </div>
-            </div>
-            <div className="privacy-row">
               <div className="privacy-row-label">Amount onchain</div>
               <div className="encrypted-badge">
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#00d2be" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -366,12 +405,29 @@ export default function PayPage({ params }: { params: Promise<{ slug: string }> 
             </div>
           </div>
 
+          <div className="wallet-row">
+            <div className="wallet-label">Your wallet</div>
+            {walletAddress
+              ? <div className="wallet-connected">{walletAddress.slice(0, 4)}...{walletAddress.slice(-4)}</div>
+              : <div className="wallet-not-connected">Not connected</div>
+            }
+          </div>
+
+          {status && (
+            <div className="status-msg">
+              <span className="spinner" />
+              {status}
+            </div>
+          )}
+
           {error && <div className="error-msg">{error}</div>}
 
           <button className="btn-pay" onClick={handlePay} disabled={paying}>
             {paying
-              ? <><span className="spinner" />Processing privately...</>
-              : `Pay ${link.amount} ${link.token}`
+              ? <><span className="spinner" />{status || "Processing..."}</>
+              : walletAddress
+              ? `Pay ${link.amount} ${link.token}`
+              : "Connect Wallet & Pay"
             }
           </button>
 

@@ -71,7 +71,7 @@ export default function Home() {
       const link = await createPaymentLink({
         label,
         amount: parseFloat(amount),
-        token: "USDC",
+        token: "SOL",
         recipientAddress: walletAddress,
       });
       setGeneratedLink(`${window.location.origin}/pay/${link.slug}`);
@@ -382,13 +382,13 @@ export default function Home() {
               <label>Amount</label>
               <div className="input-wrap">
                 <input
-                  placeholder="0.00"
+                  placeholder="0.01"
                   type="number"
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
                   style={{ paddingRight: '60px' }}
                 />
-                <div className="token-badge">USDC</div>
+                <div className="token-badge">SOL</div>
               </div>
             </div>
 
